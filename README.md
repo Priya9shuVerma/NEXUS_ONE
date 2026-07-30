@@ -1,15 +1,43 @@
-# NEXUS ONE
+# NEXUS ONE 🚀
 
-AI Powered Autonomous Digital Twin & Cyber Defense Platform
+An AI-powered platform combining:
+
+- 🤖 Artificial Intelligence
+- 🛡️ Cybersecurity
+- 🌐 Full Stack Development
+- ☁️ Cloud Computing
+- 📊 Data Analytics
 
 ## Tech Stack
 
-- Next.js
+### Backend
 - FastAPI
+- SQLAlchemy
 - PostgreSQL
-- MongoDB
-- Redis
-- Docker
-- Kubernetes
-- AI
-- Cyber Security
+
+### Frontend
+- Next.js
+- React
+- Tailwind CSS
+
+### AI Engine
+- Transformers
+- LangChain
+- FAISS
+
+### Security
+- JWT Authentication
+- RBAC
+
+## Project Structure
+
+NEXUS_ONE/
+├── backend/
+├── frontend/
+├── ai-engine/
+├── cyber-engine/
+├── database/
+├── docker/
+├── docs/
+├── README.md
+└── .gitignore
