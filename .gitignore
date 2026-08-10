@@ -1,9 +1,74 @@
+# Python
 venv/
-node_modules/
-.env
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+*.pyo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js
+node_modules/
+.next/
+out/
 dist/
 build/
+
+# IDE
 .vscode/
 .idea/
+
+# AI / Vector databases
+vector_db/
+faiss_db/
+*.faiss
+*.pkl
+
+# Local databases / uploaded documents
+*.db
+*.sqlite
+*.sqlite3
+*.pdf
+
+# Backups / temporary files
+backup/
+*.backup
+*.backup2
+*.before-*
+*.context-backup
+*.WORKING_BACKUP*
+*.corrupted_*
+*.working_*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Old root-level AI code
+/app/
+
+# Backup files
+*.backup*
+*.before-*
+*.WORKING_BACKUP*
+*.context-backup
+*.corrupted_*
+*.working_*
+
+# All backup and temporary source copies
+*.backup*
+*.before-*
+*.before_*
+*backup*
+*.WORKING_BACKUP*
+*.context-backup*
+*.corrupted_*
+*.working_*
+
+*.restored_*

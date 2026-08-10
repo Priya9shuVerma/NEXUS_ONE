@@ -1,0 +1,875 @@
+"use client";
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
+
+import {
+  Plus,
+  Paperclip,
+  Library,
+  Globe,
+  ScanLine,
+  Mic,
+  Send,
+  Trash2,
+  Image as ImageIcon,
+  X,
+  Code2,
+  Palette,
+  Brain,
+  FileText,
+  Sparkles,
+  ArrowUp,
+  ShieldCheck,
+  MessageSquare,
+} from "lucide-react";
+
+type Source = {
+  file: string;
+  page: number;
+};
+
+type Message = {
+  role: "user" | "assistant";
+  text: string;
+  sources?: Source[];
+};
+
+export default function AIPage() {
+  const API_URL = "http://127.0.0.1:8000";
+
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: "assistant",
+      text: "Hello! ??\n\nAsk me anything about your uploaded documents.",
+    },
+  ]);
+
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [fileName, setFileName] = useState("");
+  const [imageName, setImageName] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  async function loadHistory() {
+    try {
+      const response = await fetch(`${API_URL}/ai/history`);
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      if (
+        data.success &&
+        Array.isArray(data.history) &&
+        data.history.length > 0
+      ) {
+        const historyMessages: Message[] = data.history.map(
+          (item: {
+            role: "user" | "assistant";
+            content: string;
+          }) => ({
+            role: item.role,
+            text: item.content,
+          })
+        );
+
+        setMessages(historyMessages);
+      }
+    } catch (error) {
+      console.error("History error:", error);
+    }
+  }
+
+  async function sendMessage(customQuestion?: string) {
+    const question = (customQuestion ?? input).trim();
+
+    if (!question || loading) return;
+
+    setMenuOpen(false);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        text: question,
+      },
+    ]);
+
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/ai/ask`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail || data?.message || "AI request failed."
+        );
+      }
+
+      const answer =
+        data?.answer ||
+        "I don't know based on the uploaded document.";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: answer,
+          sources: Array.isArray(data?.sources)
+            ? data.sources
+            : [],
+        },
+      ]);
+    } catch (error) {
+      console.error("AI error:", error);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text:
+            "Sorry, I couldn't process your request. Please check that the backend is running and try again.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function uploadPDF(file: File) {
+    setUploading(true);
+    setFileName(file.name);
+    setMenuOpen(false);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${API_URL}/ai/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail || data?.message || "Upload failed."
+        );
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text:
+            data?.message ||
+            `PDF "${file.name}" uploaded successfully. You can now ask questions about it.`,
+        },
+      ]);
+    } catch (error) {
+      console.error("Upload error:", error);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text:
+            "PDF upload failed. Please make sure the backend is running and the file is a valid PDF.",
+        },
+      ]);
+    } finally {
+      setUploading(false);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  function handlePDFChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "Please upload a PDF file only.",
+        },
+      ]);
+
+      return;
+    }
+
+    uploadPDF(file);
+  }
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "Please select an image file.",
+        },
+      ]);
+
+      return;
+    }
+
+    setImageName(file.name);
+    setMenuOpen(false);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        text: `Image "${file.name}" attached. Image analysis can be connected to the AI vision backend next.`,
+      },
+    ]);
+
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  }
+
+  function toggleMic() {
+    if (typeof window === "undefined") return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text:
+            "Voice input is not supported by this browser. Please use Chrome or Edge.",
+        },
+      ]);
+
+      return;
+    }
+
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+
+      setInput((prev) =>
+        prev ? `${prev} ${transcript}` : transcript
+      );
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setListening(false);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  async function clearChat() {
+    try {
+      await fetch(`${API_URL}/ai/memory`, {
+      });
+    } catch (error) {
+      console.error("Clear history error:", error);
+    }
+
+    setMessages([
+      {
+        role: "assistant",
+        text: "Hello! ??\n\nAsk me anything about your uploaded documents.",
+      },
+    ]);
+
+    setFileName("");
+    setImageName("");
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function menuAction(name: string) {
+    setMenuOpen(false);
+
+    const messages: Record<string, string> = {
+      "Web Search":
+        "?? Web Search is ready in the UI. The live web-search backend can be connected next.",
+      "Deep Research":
+        "?? Deep Research is available in the interface. The research workflow can be connected next.",
+      "OpenAI Platform":
+        "OpenAI Platform integration can be connected here when required.",
+      GitHub:
+        "GitHub integration can be connected here for repositories, issues and PRs.",
+      Canva:
+        "Canva integration can be connected here for design workflows.",
+    };
+
+    if (messages[name]) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: messages[name],
+        },
+      ]);
+    }
+  }
+
+  const isFreshChat =
+    messages.length === 1 && messages[0].role === "assistant";
+
+  return (
+    <main className="min-h-screen bg-[#09090f] text-white relative overflow-hidden">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1100px] flex-col overflow-hidden px-4 sm:px-6"><div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-purple-600/20 blur-[120px]" /><div className="pointer-events-none absolute -right-40 top-20 h-96 w-96 rounded-full bg-blue-500/20 blur-[120px]" /><div className="pointer-events-none absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-cyan-500/10 blur-[120px]" />
+
+        {/* HEADER */}
+        <header className="flex h-[76px] items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/20 bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-400 shadow-[0_0_25px_rgba(139,92,246,0.35)]">
+              <Sparkles size={19} className="text-white drop-shadow-lg" />
+            </div>
+
+            <div>
+              <h1 className="text-[17px] font-semibold tracking-tight">
+                NEXUS ONE
+              </h1>
+
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)]" />
+                <p className="text-[12px] text-gray-400">
+                  AI Knowledge Assistant
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={clearChat}
+            className="group flex items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-sm text-gray-400 transition hover:border-white/10 hover:bg-white/[0.05] hover:text-white"
+          >
+            <Trash2
+              size={16}
+              className="transition group-hover:scale-105"
+            />
+            <span className="hidden sm:inline">Clear Chat</span>
+          </button>
+        </header>
+
+        {/* CHAT */}
+        <section className="relative flex min-h-0 flex-1 flex-col">
+
+          <div className="flex-1 overflow-y-auto pb-[180px] pt-4">
+
+            {/* WELCOME */}
+            {isFreshChat && (
+              <div className="flex min-h-[58vh] flex-col items-center justify-center px-3 text-center">
+
+                <div className="relative mb-7">
+                  <div className="absolute inset-0 rounded-[28px] bg-gradient-to-r from-purple-500/40 via-blue-500/30 to-cyan-400/40 blur-3xl" />
+
+                  <div className="relative flex h-20 w-20 items-center justify-center rounded-[25px] border border-white/20 bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-400 shadow-[0_0_45px_rgba(99,102,241,0.45)]">
+                    <Sparkles size={34} strokeWidth={1.5} className="text-white drop-shadow-lg" />
+                  </div>
+                </div>
+
+                <h2 className="bg-gradient-to-r from-white via-blue-100 to-purple-200 bg-clip-text text-3xl font-semibold tracking-tight text-transparent sm:text-4xl">
+                  How can I help you today?
+                </h2>
+
+                <p className="mt-3 max-w-lg text-sm leading-6 text-gray-400 sm:text-[15px]">
+                  Ask questions about your documents, analyze knowledge,
+                  explore ideas, or let NEXUS ONE help you get things done.
+                </p>
+
+                <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+
+                  <button
+                    onClick={() =>
+                      setInput("Summarize my uploaded document")
+                    }
+                    className="group rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-4 text-left shadow-lg transition duration-300 hover:-translate-y-1 hover:border-purple-400/30 hover:bg-purple-500/[0.08] hover:shadow-[0_12px_35px_rgba(139,92,246,0.15)]"
+                  >
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/30 to-blue-500/20 text-purple-200 ring-1 ring-purple-400/20">
+                      <FileText size={18} />
+                    </div>
+
+                    <div className="text-sm font-medium">
+                      Summarize my document
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-500">
+                      Get the important points quickly
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      setInput("What are the main topics in my document?")
+                    }
+                    className="group rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-4 text-left shadow-lg transition duration-300 hover:-translate-y-1 hover:border-purple-400/30 hover:bg-purple-500/[0.08] hover:shadow-[0_12px_35px_rgba(139,92,246,0.15)]"
+                  >
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/30 to-blue-500/20 text-purple-200 ring-1 ring-purple-400/20">
+                      <MessageSquare size={18} />
+                    </div>
+
+                    <div className="text-sm font-medium">
+                      Ask about my document
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-500">
+                      Find answers from your knowledge base
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      setInput("Explain the important concepts simply")
+                    }
+                    className="group rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-4 text-left shadow-lg transition duration-300 hover:-translate-y-1 hover:border-purple-400/30 hover:bg-purple-500/[0.08] hover:shadow-[0_12px_35px_rgba(139,92,246,0.15)]"
+                  >
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/30 to-blue-500/20 text-purple-200 ring-1 ring-purple-400/20">
+                      <Brain size={18} />
+                    </div>
+
+                    <div className="text-sm font-medium">
+                      Explain something
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-500">
+                      Turn complex information into simple language
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="group rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-4 text-left shadow-lg transition duration-300 hover:-translate-y-1 hover:border-purple-400/30 hover:bg-purple-500/[0.08] hover:shadow-[0_12px_35px_rgba(139,92,246,0.15)]"
+                  >
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/30 to-blue-500/20 text-purple-200 ring-1 ring-purple-400/20">
+                      <Paperclip size={18} />
+                    </div>
+
+                    <div className="text-sm font-medium">
+                      Upload a PDF
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-500">
+                      Add a document to your knowledge base
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* MESSAGES */}
+            {!isFreshChat && (
+              <div className="mx-auto max-w-3xl space-y-7 px-1 pt-6">
+
+                {messages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${
+                      message.role === "user"
+                        ? "justify-end"
+                        : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[88%] ${
+                        message.role === "user"
+                          ? "rounded-3xl border border-white/10 bg-[#303030] px-5 py-3.5 shadow-sm"
+                          : "px-1 py-1"
+                      }`}
+                    >
+                      {message.role === "assistant" && (
+                        <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                          <Sparkles size={13} />
+                          <span>NEXUS ONE</span>
+                        </div>
+                      )}
+
+                      <div className="whitespace-pre-wrap text-[15px] leading-7 text-gray-100">
+                        {message.text}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex items-center gap-2 px-1 py-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06]">
+                      <Sparkles size={15} />
+                    </div>
+
+                    <div className="flex gap-1">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:150ms]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* COMPOSER AREA */}
+          <div className="absolute bottom-0 left-0 right-0">
+
+            {/* subtle fade */}
+            <div className="pointer-events-none absolute -top-24 left-0 right-0 h-24 bg-gradient-to-t from-[#212121] to-transparent" />
+
+            <div className="relative mx-auto max-w-3xl">
+
+              {/* ATTACHMENTS */}
+              {(fileName || imageName) && (
+                <div className="mb-2 flex flex-wrap gap-2 px-1">
+
+                  {fileName && (
+                    <div className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 px-3 py-2 text-xs text-cyan-100 shadow-lg">
+                      <FileText size={14} />
+
+                      <span className="max-w-48 truncate">
+                        {uploading ? "Uploading..." : fileName}
+                      </span>
+
+                      <button
+                        onClick={() => setFileName("")}
+                        className="text-gray-500 transition hover:text-white"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
+
+                  {imageName && (
+                    <div className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 px-3 py-2 text-xs text-cyan-100 shadow-lg">
+                      <ImageIcon size={14} />
+
+                      <span className="max-w-48 truncate">
+                        {imageName}
+                      </span>
+
+                      <button
+                        onClick={() => setImageName("")}
+                        className="text-gray-500 transition hover:text-white"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TOOL MENU */}
+              {menuOpen && (
+                <div className="absolute bottom-[74px] left-0 z-50 w-[min(390px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-purple-400/20 bg-[#151522]/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+
+                  <div className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                    Tools & Attachments
+                  </div>
+
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Paperclip size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Upload PDF
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Add a document
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Library size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Add from library
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Browse your files
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <ScanLine size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Lens
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Analyze an image
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => menuAction("Web Search")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Globe size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Web Search
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Search real-time information
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => menuAction("Deep Research")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Brain size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Deep Research
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Generate detailed research
+                      </div>
+                    </div>
+                  </button>
+
+                  <div className="my-2 border-t border-white/[0.07]" />
+
+                  <button
+                    onClick={() => menuAction("OpenAI Platform")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07] text-lg">
+                      ?
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        OpenAI Platform
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        AI platform integration
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => menuAction("GitHub")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Code2 size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        GitHub
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Repositories, issues and PRs
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => menuAction("Canva")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-gradient-to-r hover:from-purple-500/10 hover:to-blue-500/10"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07]">
+                      <Palette size={18} />
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium">
+                        Canva
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Create and edit designs
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              {/* HIDDEN FILE INPUTS */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                onChange={handlePDFChange}
+                className="hidden"
+              />
+
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="hidden"
+              />
+
+              {/* MAIN COMPOSER */}
+              <div className="group flex items-end gap-2 rounded-[24px] border border-purple-400/20 bg-gradient-to-r from-[#191624] via-[#171b2b] to-[#111e29] p-2 shadow-[0_10px_50px_rgba(59,130,246,0.18)] transition focus-within:border-cyan-400/30 focus-within:shadow-[0_0_35px_rgba(34,211,238,0.12)]">
+
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  title="Add tools"
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition ${
+                    menuOpen
+                      ? "bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.4)]"
+                      : "text-cyan-200 hover:bg-cyan-400/10 hover:text-cyan-100"
+                  }`}
+                >
+                  {menuOpen ? (
+                    <X size={21} />
+                  ) : (
+                    <Plus size={23} />
+                  )}
+                </button>
+
+                <textarea
+                  value={input}
+                  onChange={(event) =>
+                    setInput(event.target.value)
+                  }
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  placeholder="Ask anything"
+                  className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-1 py-3 text-[15px] text-white outline-none placeholder:text-gray-500"
+                />
+
+                <button
+                  onClick={toggleMic}
+                  title={
+                    listening
+                      ? "Stop listening"
+                      : "Voice input"
+                  }
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition ${
+                    listening
+                      ? "bg-red-500 text-white"
+                      : "text-cyan-200 hover:bg-cyan-400/10 hover:text-cyan-100"
+                  }`}
+                >
+                  <Mic size={20} />
+                </button>
+
+                <button
+                  onClick={() => sendMessage()}
+                  disabled={loading || !input.trim()}
+                  title="Send"
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition ${
+                    input.trim() && !loading
+                      ? "bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 text-white shadow-[0_0_22px_rgba(59,130,246,0.45)] hover:scale-[1.06]"
+                      : "bg-white/[0.08] text-gray-600"
+                  }`}
+                >
+                  {loading ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
+                  ) : (
+                    <ArrowUp size={20} strokeWidth={2.5} />
+                  )}
+                </button>
+              </div>
+
+              {/* FOOTER */}
+              <div className="flex items-center justify-center gap-2 py-3 text-[11px] text-gray-500/90">
+                <ShieldCheck size={12} />
+                <span>
+                  NEXUS ONE can make mistakes. Check important information.
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
