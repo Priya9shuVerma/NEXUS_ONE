@@ -1,0 +1,331 @@
+﻿from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_user, get_current_admin
+from app.db.database import get_db
+from app.models.jea import JEAPolicy, JEAExecution
+from app.models.iam import IAMRole, user_roles
+from app.models.user import User
+from app.services.audit import create_audit_log
+from app.services.security_service import record_security_event
+
+
+router = APIRouter(
+    prefix="/jea",
+    tags=["JEA"],
+)
+
+
+class JEAPolicyCreate(BaseModel):
+    name: str
+    description: str | None = None
+    resource: str
+    allowed_action: str
+    required_role_id: int | None = None
+
+
+class JEAExecuteRequest(BaseModel):
+    policy_id: int
+    resource: str
+    action: str
+
+
+@router.get("/policies")
+def list_policies(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    return db.query(JEAPolicy).order_by(JEAPolicy.id.desc()).all()
+
+
+@router.post("/policies")
+def create_policy(
+    data: JEAPolicyCreate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    existing = (
+        db.query(JEAPolicy)
+        .filter(JEAPolicy.name == data.name)
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="JEA policy already exists",
+        )
+
+    policy = JEAPolicy(
+        name=data.name,
+        description=data.description,
+        resource=data.resource,
+        allowed_action=data.allowed_action,
+        required_role_id=data.required_role_id,
+        created_by=current_admin.id,
+    )
+
+    db.add(policy)
+    db.commit()
+    db.refresh(policy)
+
+    create_audit_log(
+        db=db,
+        user_id=current_admin.id,
+        username=getattr(current_admin, "username", None),
+        action="JEA_POLICY_CREATED",
+        target=f"policy:{policy.id}",
+        status="SUCCESS",
+        severity="INFO",
+        details=f"JEA policy created: {policy.name}",
+    )
+
+    return policy
+
+
+@router.get("/policies/{policy_id}")
+def get_policy(
+    policy_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    policy = (
+        db.query(JEAPolicy)
+        .filter(JEAPolicy.id == policy_id)
+        .first()
+    )
+
+    if not policy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="JEA policy not found",
+        )
+
+    return policy
+
+
+@router.post("/execute")
+def execute_jea(
+    data: JEAExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Secure JEA execution flow:
+
+    1. Authenticate user.
+    2. Find active JEA policy.
+    3. Verify requested resource/action.
+    4. Verify user has IAM role.
+    5. Record denied/approved execution.
+    6. Create audit/security event.
+    """
+
+    policy = (
+        db.query(JEAPolicy)
+        .filter(
+            JEAPolicy.id == data.policy_id,
+            JEAPolicy.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not policy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active JEA policy not found",
+        )
+
+    # --------------------------------------------------------
+    # JEA POLICY CHECK
+    # --------------------------------------------------------
+
+    policy_allowed = (
+        policy.resource == data.resource
+        and policy.allowed_action == data.action
+    )
+
+    if not policy_allowed:
+
+        execution = JEAExecution(
+            policy_id=policy.id,
+            user_id=current_user.id,
+            resource=data.resource,
+            action=data.action,
+            status="denied",
+            result="Action is not permitted by JEA policy",
+        )
+
+        db.add(execution)
+        db.commit()
+
+        create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            username=getattr(current_user, "username", None),
+            action="JEA_EXECUTION_DENIED",
+            target=f"policy:{policy.id}",
+            status="FAILED",
+            severity="HIGH",
+            details=(
+                f"JEA policy denied resource={data.resource}, "
+                f"action={data.action}"
+            ),
+        )
+
+        record_security_event(
+            db=db,
+            event_type="JEA_EXECUTION_DENIED",
+            severity="HIGH",
+            description=(
+                f"JEA action denied by policy {policy.name}"
+            ),
+            user_id=current_user.id,
+            username=getattr(current_user, "username", None),
+            endpoint="/jea/execute",
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="JEA policy does not permit this action",
+        )
+
+    # --------------------------------------------------------
+    # IAM ROLE CHECK
+    # --------------------------------------------------------
+
+    role_exists = (
+        db.query(IAMRole)
+        .join(
+            user_roles,
+            IAMRole.id == user_roles.c.role_id,
+        )
+        .filter(
+            user_roles.c.user_id == current_user.id,
+            IAMRole.is_active.is_(True),
+            IAMRole.id == policy.required_role_id,
+        )
+        .first()
+    )
+
+    # NOTE:
+    # For now this checks the IAM role using policy.id as the
+    # role identifier. We will replace this with an explicit
+    # policy -> role mapping in the next step.
+    #
+    # This keeps the current database schema unchanged.
+
+    if policy.required_role_id is None or (not role_exists and current_user.role != "admin"):
+
+        execution = JEAExecution(
+            policy_id=policy.id,
+            user_id=current_user.id,
+            resource=data.resource,
+            action=data.action,
+            status="denied",
+            result="User does not have required IAM authorization",
+        )
+
+        db.add(execution)
+        db.commit()
+
+        create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            username=getattr(current_user, "username", None),
+            action="JEA_IAM_DENIED",
+            target=f"policy:{policy.id}",
+            status="FAILED",
+            severity="CRITICAL",
+            details=(
+                f"User lacks required IAM authorization "
+                f"for JEA policy {policy.name}"
+            ),
+        )
+
+        record_security_event(
+            db=db,
+            event_type="JEA_IAM_DENIED",
+            severity="CRITICAL",
+            description=(
+                f"JEA execution denied because IAM authorization "
+                f"is missing for policy {policy.name}"
+            ),
+            user_id=current_user.id,
+            username=getattr(current_user, "username", None),
+            endpoint="/jea/execute",
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="IAM authorization required for JEA execution",
+        )
+
+    # --------------------------------------------------------
+    # APPROVED EXECUTION
+    # --------------------------------------------------------
+
+    execution = JEAExecution(
+        policy_id=policy.id,
+        user_id=current_user.id,
+        resource=data.resource,
+        action=data.action,
+        status="approved",
+        result="JEA action authorized",
+    )
+
+    db.add(execution)
+    db.commit()
+    db.refresh(execution)
+
+    create_audit_log(
+        db=db,
+        user_id=current_user.id,
+        username=getattr(current_user, "username", None),
+        action="JEA_EXECUTION_APPROVED",
+        target=f"policy:{policy.id}",
+        status="SUCCESS",
+        severity="HIGH",
+        details=(
+            f"JEA execution approved: "
+            f"resource={data.resource}, action={data.action}"
+        ),
+    )
+
+    record_security_event(
+        db=db,
+        event_type="JEA_EXECUTION_APPROVED",
+        severity="HIGH",
+        description=(
+            f"JEA execution authorized by policy {policy.name}"
+        ),
+        user_id=current_user.id,
+        username=getattr(current_user, "username", None),
+        endpoint="/jea/execute",
+    )
+
+    return {
+        "message": "JEA action authorized",
+        "execution_id": execution.id,
+        "policy_id": policy.id,
+        "resource": data.resource,
+        "action": data.action,
+        "status": "approved",
+    }
+
+
+@router.get("/executions")
+def list_executions(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(JEAExecution)
+        .order_by(JEAExecution.id.desc())
+        .limit(100)
+        .all()
+    )
+
+
+

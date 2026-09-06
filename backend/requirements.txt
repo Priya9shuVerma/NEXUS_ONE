@@ -16,4 +16,8 @@ langchain-text-splitters
 langdetect
 google-genai
 pytest
-starlette
+psycopg[binary]
+email-validator
+pwdlib[argon2]
+redis
+psutil

@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import re
 import uuid
@@ -1103,7 +1103,6 @@ def clear_memory():
 
     memory.clear()
 
-    return {
-        "success": True,
+    return {        "success": True,
         "message": "Chat memory cleared."
     }

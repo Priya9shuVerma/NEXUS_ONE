@@ -1,39 +1,104 @@
+﻿import logging
 import time
-import logging
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logger = logging.getLogger("nexus_one.security")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Security-safe HTTP request logging middleware.
+
+    Logs:
+    - HTTP method
+    - request path
+    - response status
+    - processing time
+    - client IP
+
+    Never logs:
+    - Authorization headers
+    - passwords
+    - access tokens
+    - refresh tokens
+    - cookies
+    - request bodies
+    """
+
+    SENSITIVE_PATH_PARTS = (
+        "/login",
+        "/register",
+        "/refresh-token",
+        "/logout",
+        "/change-password",
+    )
+
+    def _get_client_ip(self, request: Request) -> str:
+        """
+        Get the direct client IP.
+
+        X-Forwarded-For is intentionally not trusted here because it can
+        be spoofed unless the application is behind a trusted proxy.
+        """
+
+        if request.client and request.client.host:
+            return request.client.host
+
+        return "unknown"
+
+    def _safe_path(self, request: Request) -> str:
+        """
+        Return only the URL path.
+
+        Query parameters are deliberately excluded because they can
+        contain credentials, tokens, API keys, or other secrets.
+        """
+
+        return request.url.path
 
     async def dispatch(
         self,
         request: Request,
-        call_next
+        call_next,
     ):
+        start_time = time.perf_counter()
 
-        start_time = time.time()
+        client_ip = self._get_client_ip(request)
+        path = self._safe_path(request)
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
 
-        process_time = time.time() - start_time
+            status_code = response.status_code
 
+            return response
 
-        logging.info(
-            f"""
-            Method: {request.method}
-            URL: {request.url.path}
-            Status: {response.status_code}
-            Time: {process_time:.4f}s
-            """
-        )
+        except Exception:
+            status_code = 500
 
+            logger.exception(
+                "Unhandled request exception | "
+                "method=%s path=%s status=%s client=%s",
+                request.method,
+                path,
+                status_code,
+                client_ip,
+            )
 
-        return response
+            raise
+
+        finally:
+            process_time = time.perf_counter() - start_time
+
+            logger.info(
+                "HTTP request | "
+                "method=%s path=%s status=%s time=%.4fs client=%s",
+                request.method,
+                path,
+                status_code,
+                process_time,
+                client_ip,
+            )

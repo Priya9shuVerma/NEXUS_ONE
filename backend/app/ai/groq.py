@@ -1,12 +1,17 @@
 ﻿import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from groq import Groq
 
 logger = logging.getLogger(__name__)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
+# NEXUS ONE root .env
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ENV_FILE = PROJECT_ROOT / ".env"
+
+load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 
 class GroqLLM:
@@ -15,7 +20,7 @@ class GroqLLM:
         api_key = os.getenv("GROQ_API_KEY")
 
         if not api_key:
-            logger.warning("GROQ_API_KEY is not configured.")
+            logger.error("GROQ_API_KEY is missing. Expected .env: %s", ENV_FILE)
             raise RuntimeError("GROQ_API_KEY is not configured.")
 
         self.client = Groq(api_key=api_key)

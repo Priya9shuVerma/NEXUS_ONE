@@ -1,105 +1,252 @@
 "use client";
 
 import { useState } from "react";
-import { loginUser } from "@/services/auth";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-
+import {
+  Brain,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import { loginUser } from "@/services/auth";
 
 export default function LoginPage() {
-
   const router = useRouter();
 
-  const [email,setEmail] = useState("");
-  const [password,setPassword] = useState("");
-  const [loading,setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  const handleLogin = async()=>{
+    setError("");
 
-    try{
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
 
+    try {
       setLoading(true);
 
       const response = await loginUser({
         email,
-        password
+        password,
       });
-
 
       console.log(response);
 
-      alert("Login Successful");
-
-
       router.push("/dashboard");
-
-
-    }
-    catch(error){
-
-      console.log(error);
-
-      alert("Login Failed");
-
-    }
-    finally{
-
+    } catch (error) {
+      console.error("Login error:", error);
+      setError("Login failed. Please check your credentials.");
+    } finally {
       setLoading(false);
-
     }
-
   };
 
-
   return (
+    <main className="relative flex min-h-screen overflow-hidden bg-[#05070b] text-white">
 
-    <main className="min-h-screen bg-black text-white flex items-center justify-center">
+      {/* Background effects */}
+      <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-pink-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-violet-600/10 blur-3xl" />
 
+      {/* Left branding panel */}
+      <section className="relative hidden flex-1 items-center justify-center border-r border-white/10 px-12 lg:flex">
 
-      <div className="w-full max-w-md bg-zinc-900 p-8 rounded-xl">
+        <div className="max-w-xl">
 
+          <div className="mb-8 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 to-violet-600 shadow-xl shadow-pink-500/20">
+              <Brain size={25} />
+            </div>
 
-        <h1 className="text-3xl font-bold text-center mb-6">
-          NEXUS ONE Login
-        </h1>
+            <div>
+              <div className="text-xl font-bold tracking-wide">
+                NEXUS ONE
+              </div>
 
+              <div className="text-[10px] uppercase tracking-[0.28em] text-gray-500">
+                Intelligence Platform
+              </div>
+            </div>
+          </div>
 
-        <input
-          className="w-full p-3 mb-4 rounded bg-zinc-800"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e)=>setEmail(e.target.value)}
-        />
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-pink-500/20 bg-pink-500/10 px-3 py-1.5 text-xs text-pink-300">
+            <Sparkles size={14} />
+            AI Powered Workspace
+          </div>
 
+          <h1 className="text-5xl font-bold leading-tight">
+            Intelligence for your
+            <span className="block bg-gradient-to-r from-pink-400 to-violet-400 bg-clip-text text-transparent">
+              entire workspace.
+            </span>
+          </h1>
 
-        <input
-          className="w-full p-3 mb-4 rounded bg-zinc-800"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e)=>setPassword(e.target.value)}
-        />
+          <p className="mt-6 max-w-lg text-base leading-7 text-gray-400">
+            Access your documents, AI knowledge assistant, analytics,
+            security tools and intelligent workflows from one centralized
+            platform.
+          </p>
 
+          <div className="mt-8 flex items-center gap-3 text-sm text-gray-500">
+            <ShieldCheck size={18} className="text-emerald-400" />
+            Secure enterprise intelligence environment
+          </div>
 
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          className="w-full bg-blue-600 p-3 rounded"
-        >
+        </div>
+      </section>
 
-        {
-          loading ? "Logging in..." : "Login"
-        }
+      {/* Login section */}
+      <section className="relative flex w-full items-center justify-center px-5 py-10 lg:w-[520px] lg:px-10">
 
-        </button>
+        <div className="w-full max-w-md">
 
+          {/* Mobile brand */}
+          <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 to-violet-600">
+              <Brain size={23} />
+            </div>
 
-      </div>
+            <div>
+              <div className="font-bold">NEXUS ONE</div>
+              <div className="text-[9px] uppercase tracking-[0.25em] text-gray-500">
+                Intelligence Platform
+              </div>
+            </div>
+          </div>
 
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold">
+              Welcome back
+            </h2>
 
+            <p className="mt-2 text-sm text-gray-500">
+              Sign in to continue to your NEXUS ONE workspace.
+            </p>
+          </div>
+
+          <form
+            onSubmit={handleLogin}
+            className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-2xl backdrop-blur-xl sm:p-8"
+          >
+
+            {/* Email */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                Email Address
+              </label>
+
+              <div className="relative">
+                <Mail
+                  size={18}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 py-3.5 pl-11 pr-4 text-sm outline-none transition placeholder:text-gray-600 focus:border-pink-500/50 focus:bg-white/[0.04]"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-sm font-medium text-gray-300">
+                  Password
+                </label>
+
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-pink-400 hover:text-pink-300"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+
+              <div className="relative">
+                <Lock
+                  size={18}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 py-3.5 pl-11 pr-12 text-sm outline-none transition placeholder:text-gray-600 focus:border-pink-500/50 focus:bg-white/[0.04]"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-500 hover:text-white"
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showPassword ? (
+                    <EyeOff size={17} />
+                  ) : (
+                    <Eye size={17} />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+            {/* Login button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-semibold text-black transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Signing in..." : "Sign in"}
+
+              {!loading && <ArrowRight size={17} />}
+            </button>
+
+            {/* Register */}
+            <div className="mt-6 text-center text-sm text-gray-500">
+              Don't have an account?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-pink-400 hover:text-pink-300"
+              >
+                Create account
+              </Link>
+            </div>
+
+          </form>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-gray-600">
+            <ShieldCheck size={14} />
+            Protected by NEXUS ONE security
+          </div>
+
+        </div>
+      </section>
     </main>
-
   );
-
 }

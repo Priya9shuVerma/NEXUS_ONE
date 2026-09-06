@@ -14,6 +14,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.models.token import RefreshToken
 from app.models.blacklist_token import BlacklistToken
+from app.models.password_reset_token import PasswordResetToken
 
 
 from app.schemas.user import (
@@ -21,7 +22,9 @@ from app.schemas.user import (
     UserLogin,
     UserResponse,
     UserUpdate,
-    PasswordChange
+    PasswordChange,
+    ForgotPasswordRequest,
+    ResetPasswordRequest
 )
 
 
@@ -46,6 +49,17 @@ from app.core.dependencies import get_current_user
 
 
 from app.services.audit_service import save_audit_log
+from app.services.login_security import (
+    record_failed_login,
+    is_suspicious_login,
+    record_suspicious_login,
+)
+
+from app.services.account_security import (
+    is_account_locked,
+    register_failed_attempt,
+    register_successful_login,
+)
 
 
 
@@ -752,6 +766,108 @@ async def update_profile(
     }
 
 
+
+# ---------------- FORGOT PASSWORD ----------------
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.email == data.email
+    ).first()
+
+    # Do not reveal whether an email exists.
+    if not user:
+        return {
+            "message": "If the account exists, a password reset request has been created."
+        }
+
+    # Invalidate existing unused reset tokens for this user.
+    existing_tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None)
+    ).all()
+
+    for reset_token in existing_tokens:
+        reset_token.used_at = datetime.utcnow()
+
+    # Generate a random reset token.
+    raw_token = uuid.uuid4().hex + uuid.uuid4().hex
+
+    # Store only the SHA-256 hash.
+    token_hash = sha256_hex(raw_token)
+
+    reset_record = PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.utcnow() + timedelta(minutes=30)
+    )
+
+    db.add(reset_record)
+    db.commit()
+
+    return {
+        "message": "Password reset request created.",
+        "reset_token": raw_token
+    }
+
+
+# ---------------- RESET PASSWORD ----------------
+
+@router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    token_hash = sha256_hex(data.token)
+
+    reset_record = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash
+    ).first()
+
+    if not reset_record:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token"
+        )
+
+    if reset_record.used_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Reset token has already been used"
+        )
+
+    if reset_record.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token"
+        )
+
+    user = db.query(User).filter(
+        User.id == reset_record.user_id
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid reset request"
+        )
+
+    user.hashed_password = hash_password(
+        data.new_password
+    )
+
+    reset_record.used_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "message": "Password reset successfully"
+    }
+
+
 # ---------------- CHANGE PASSWORD ---------------- #
 
 
@@ -838,3 +954,11 @@ async def change_password(
         "message": "Password Changed Successfully"
 
     }
+
+
+
+
+
+
+
+

@@ -1,14 +1,15 @@
 ﻿import logging
 
-from app.ai.groq import GroqLLM
+from app.ai.gemini import ask_gemini
 
 logger = logging.getLogger(__name__)
 
 
 class HybridLLM:
     """
-    Groq is the primary and currently active LLM.
-    Gemini fallback is disabled to avoid quota-related failures.
+    NEXUS ONE LLM provider.
+
+    Gemini is the active provider.
     """
 
     def invoke(self, prompt: str):
@@ -18,17 +19,16 @@ class HybridLLM:
                 self.content = text
 
         try:
-            groq = GroqLLM()
-            result = groq.invoke(prompt)
+            result = ask_gemini(prompt)
 
-            if result and result.content:
-                logger.debug("LLM Provider: GROQ")
-                return Response(result.content)
+            if result:
+                logger.info("LLM Provider: GEMINI")
+                return Response(result)
 
-            raise RuntimeError("Groq returned an empty response.")
+            raise RuntimeError("Gemini returned an empty response.")
 
-        except Exception as error:
-            logger.exception("Groq failed")
+        except Exception:
+            logger.exception("Gemini LLM failed")
             raise RuntimeError("LLM invocation failed")
 
 

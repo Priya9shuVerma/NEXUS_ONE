@@ -29,6 +29,8 @@ import {
   MessageSquare,
 } from "lucide-react";
 
+import api from "../../services/api";
+
 type Source = {
   file: string;
   page: number;
@@ -69,11 +71,8 @@ export default function AIPage() {
 
   async function loadHistory() {
     try {
-      const response = await fetch(`${API_URL}/ai/history`);
-
-      if (!response.ok) return;
-
-      const data = await response.json();
+      const response = await api.get('/ai/history');
+      const data = response.data;
 
       if (
         data.success &&
@@ -89,8 +88,7 @@ export default function AIPage() {
             text: item.content,
           })
         );
-
-        setMessages(historyMessages);
+    setMessages(historyMessages);
       }
     } catch (error) {
       console.error("History error:", error);
@@ -116,23 +114,13 @@ export default function AIPage() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/ai/ask`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question,
-        }),
+      const response = await api.post("/ai/ask", {
+        question,
       });
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (!response.ok) {
-        throw new Error(
-          data?.detail || data?.message || "AI request failed."
-        );
-      }
+      
 
       const answer =
         data?.answer ||
@@ -173,18 +161,11 @@ export default function AIPage() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${API_URL}/ai/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await api.post("/ai/upload", formData);
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (!response.ok) {
-        throw new Error(
-          data?.detail || data?.message || "Upload failed."
-        );
-      }
+      
 
       setMessages((prev) => [
         ...prev,
@@ -308,9 +289,9 @@ export default function AIPage() {
       const transcript = event.results[0][0].transcript;
 
       setInput((prev) =>
-        prev ? `${prev} ${transcript}` : transcript
-      );
-    };
+    prev ? `${prev} ${transcript}` : transcript
+  );
+};
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
@@ -327,8 +308,7 @@ export default function AIPage() {
 
   async function clearChat() {
     try {
-      await fetch(`${API_URL}/ai/memory`, {
-      });
+      await api.delete("/ai/memory");
     } catch (error) {
       console.error("Clear history error:", error);
     }
@@ -871,5 +851,21 @@ export default function AIPage() {
         </section>
       </div>
     </main>
-  );
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
+
